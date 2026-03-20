@@ -1,120 +1,189 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
+import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 
+type Book = {
+  bookID: number
+  title: string
+  author: string
+  publisher: string
+  isbn: string
+  classification: string
+  category: string
+  pageCount: number
+  price: number
+}
+
+type BooksResponse = {
+  books: Book[]
+  totalBooks: number
+  page: number
+  pageSize: number
+  totalPages: number
+}
+
 function App() {
-  const [count, setCount] = useState(0)
+  const [books, setBooks] = useState<Book[]>([])
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(5)
+  const [sort, setSort] = useState<'asc' | 'desc'>('asc')
+  const [totalBooks, setTotalBooks] = useState(0)
+  const [totalPages, setTotalPages] = useState(0)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const controller = new AbortController()
+    const fetchBooks = async () => {
+      try {
+        setLoading(true)
+        setError('')
+        const response = await fetch(
+          `/api/books?page=${page}&pageSize=${pageSize}&sort=${sort}`,
+          { signal: controller.signal },
+        )
+
+        if (!response.ok) {
+          throw new Error('Unable to load books from API')
+        }
+
+        const data: BooksResponse = await response.json()
+        setBooks(data.books)
+        setTotalBooks(data.totalBooks)
+        setTotalPages(data.totalPages)
+      } catch (err) {
+        if (err instanceof Error && err.name !== 'AbortError') {
+          setError(err.message)
+        }
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchBooks()
+    return () => controller.abort()
+  }, [page, pageSize, sort])
+
+  const pageNumbers = useMemo(() => {
+    return Array.from({ length: totalPages }, (_, i) => i + 1)
+  }, [totalPages])
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div className="container py-4">
+      <h1 className="mb-3">Online Bookstore Catalog</h1>
+      <p className="text-muted">
+        Showing {books.length} of {totalBooks} books
+      </p>
 
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
+      <div className="row g-3 mb-4 align-items-end">
+        <div className="col-sm-6 col-md-3">
+          <label htmlFor="pageSize" className="form-label">
+            Results per page
+          </label>
+          <select
+            id="pageSize"
+            className="form-select"
+            value={pageSize}
+            onChange={(e) => {
+              setPageSize(Number(e.target.value))
+              setPage(1)
+            }}
+          >
+            <option value={5}>5</option>
+            <option value={10}>10</option>
+            <option value={20}>20</option>
+          </select>
         </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+        <div className="col-sm-6 col-md-3">
+          <label htmlFor="sortOrder" className="form-label">
+            Sort by title
+          </label>
+          <select
+            id="sortOrder"
+            className="form-select"
+            value={sort}
+            onChange={(e) => {
+              setSort(e.target.value as 'asc' | 'desc')
+              setPage(1)
+            }}
+          >
+            <option value="asc">A → Z</option>
+            <option value="desc">Z → A</option>
+          </select>
+        </div>
+      </div>
+
+      {loading && <div className="alert alert-info">Loading books...</div>}
+      {error && <div className="alert alert-danger">{error}</div>}
+
+      {!loading && !error && (
+        <>
+          <div className="table-responsive">
+            <table className="table table-striped table-bordered align-middle">
+              <thead className="table-dark">
+                <tr>
+                  <th>Title</th>
+                  <th>Author</th>
+                  <th>Publisher</th>
+                  <th>ISBN</th>
+                  <th>Classification</th>
+                  <th>Category</th>
+                  <th>Pages</th>
+                  <th>Price</th>
+                </tr>
+              </thead>
+              <tbody>
+                {books.map((book) => (
+                  <tr key={book.bookID}>
+                    <td>{book.title}</td>
+                    <td>{book.author}</td>
+                    <td>{book.publisher}</td>
+                    <td>{book.isbn}</td>
+                    <td>{book.classification}</td>
+                    <td>{book.category}</td>
+                    <td>{book.pageCount}</td>
+                    <td>${book.price.toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <nav aria-label="Books pagination">
+            <ul className="pagination flex-wrap">
+              <li className={`page-item ${page === 1 ? 'disabled' : ''}`}>
+                <button
+                  className="page-link"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  Previous
+                </button>
+              </li>
+
+              {pageNumbers.map((pageNumber) => (
+                <li
+                  key={pageNumber}
+                  className={`page-item ${pageNumber === page ? 'active' : ''}`}
+                >
+                  <button className="page-link" onClick={() => setPage(pageNumber)}>
+                    {pageNumber}
+                  </button>
+                </li>
+              ))}
+
+              <li className={`page-item ${page === totalPages ? 'disabled' : ''}`}>
+                <button
+                  className="page-link"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Next
+                </button>
+              </li>
+            </ul>
+          </nav>
+        </>
+      )}
+    </div>
   )
 }
 
