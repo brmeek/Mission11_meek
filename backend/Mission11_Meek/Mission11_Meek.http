@@ -1,6 +1,0 @@
-@Mission11_Meek_HostAddress = http://localhost:5204
-
-GET {{Mission11_Meek_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###

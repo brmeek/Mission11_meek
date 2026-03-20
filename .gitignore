@@ -35,12 +35,6 @@ build/
 *.userosscache
 *.sln.docstates
 
-# SQLite Databases (Local Dev)
-*.db
-*.db-shm
-*.db-wal
-*.sqlite
-*.sqlite3
 
 # React / Node.js extra
 npm-debug.log*
