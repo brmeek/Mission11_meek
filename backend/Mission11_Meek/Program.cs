@@ -1,41 +1,92 @@
+using Microsoft.EntityFrameworkCore;
+using Mission11_Meek;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+builder.Services.AddDbContext<BookstoreContext>(options =>
+    options.UseSqlite(builder.Configuration.GetConnectionString("BookstoreConnection")));
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+    {
+        policy.WithOrigins("http://localhost:5173")
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
 }
 
 app.UseHttpsRedirection();
+app.UseCors("AllowFrontend");
 
-var summaries = new[]
+app.MapGet("/api/categories", async (BookstoreContext db) =>
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+    var categories = await db.Books
+        .AsNoTracking()
+        .Select(b => b.Category)
+        .Distinct()
+        .OrderBy(c => c)
+        .ToListAsync();
 
-app.MapGet("/weatherforecast", () =>
+    return Results.Ok(categories);
+});
+
+app.MapGet("/api/books", async (
+    BookstoreContext db,
+    int page = 1,
+    int pageSize = 5,
+    string sort = "asc",
+    string? category = null) =>
 {
-    var forecast = Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+    if (page < 1)
+    {
+        page = 1;
+    }
+
+    if (pageSize < 1)
+    {
+        pageSize = 5;
+    }
+
+    if (pageSize > 100)
+    {
+        pageSize = 100;
+    }
+
+    var query = db.Books.AsNoTracking().AsQueryable();
+
+    if (!string.IsNullOrWhiteSpace(category) && !category.Equals("All", StringComparison.OrdinalIgnoreCase))
+    {
+        query = query.Where(b => b.Category == category);
+    }
+
+    query = sort.Equals("desc", StringComparison.OrdinalIgnoreCase)
+        ? query.OrderByDescending(b => b.Title)
+        : query.OrderBy(b => b.Title);
+
+    var totalBooks = await query.CountAsync();
+
+    var books = await query
+        .Skip((page - 1) * pageSize)
+        .Take(pageSize)
+        .ToListAsync();
+
+    return Results.Ok(new
+    {
+        books,
+        totalBooks,
+        page,
+        pageSize,
+        totalPages = (int)Math.Ceiling(totalBooks / (double)pageSize)
+    });
+});
 
 app.Run();
-
-internal record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
