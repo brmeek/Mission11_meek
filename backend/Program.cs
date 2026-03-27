@@ -27,11 +27,24 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseCors("AllowFrontend");
 
+app.MapGet("/api/categories", async (BookstoreContext db) =>
+{
+    var categories = await db.Books
+        .AsNoTracking()
+        .Select(b => b.Category)
+        .Distinct()
+        .OrderBy(c => c)
+        .ToListAsync();
+
+    return Results.Ok(categories);
+});
+
 app.MapGet("/api/books", async (
     BookstoreContext db,
     int page = 1,
     int pageSize = 5,
-    string sort = "asc") =>
+    string sort = "asc",
+    string? category = null) =>
 {
     if (page < 1)
     {
@@ -48,7 +61,12 @@ app.MapGet("/api/books", async (
         pageSize = 100;
     }
 
-    var query = db.Books.AsNoTracking();
+    var query = db.Books.AsNoTracking().AsQueryable();
+
+    if (!string.IsNullOrWhiteSpace(category) && !category.Equals("All", StringComparison.OrdinalIgnoreCase))
+    {
+        query = query.Where(b => b.Category == category);
+    }
 
     query = sort.Equals("desc", StringComparison.OrdinalIgnoreCase)
         ? query.OrderByDescending(b => b.Title)
