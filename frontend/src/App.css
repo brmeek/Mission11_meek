@@ -4,9 +4,12 @@ body {
 
 h1 {
   font-weight: 700;
+<<<<<<< HEAD
 }
 
 .sticky-panel {
   position: sticky;
   top: 1rem;
+=======
+>>>>>>> main
 }
