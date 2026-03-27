@@ -1,1 +1,44 @@
 /frontend/node_modules/
+
+/frontend/node_modules/
+/backend/node_modules/
+/.env/
+/coverage/
+.DS_Store
+*.log
+*.env
+dist/
+build/
+.idea/
+.vscode/
+*.iml
+*.suo
+*.ntvs*
+*.njsproj
+*.sw?
+*.bak
+*.tmp
+*.pid
+*.seed
+*.pid.lock
+*.log
+*.gz
+*.zip
+*.tar
+*.rar
+*.7z
+
+# .NET Core / C# Build Artifacts
+[Bb]in/
+[Oo]bj/
+
+# User-specific files
+*.user
+*.userosscache
+*.sln.docstates
+
+
+# React / Node.js extra
+npm-debug.log*
+yarn-error.log*
+.eslintcache
