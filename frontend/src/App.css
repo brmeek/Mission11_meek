@@ -5,3 +5,8 @@ body {
 h1 {
   font-weight: 700;
 }
+
+.sticky-panel {
+  position: sticky;
+  top: 1rem;
+}
