@@ -26,8 +26,69 @@ type CartItem = {
   quantity: number
 }
 
+type View = 'shop' | 'cart' | 'add' | 'edit'
+
+type BookFormState = {
+  title: string
+  author: string
+  publisher: string
+  isbn: string
+  classification: string
+  category: string
+  pageCount: string
+  price: string
+}
+
+type BookUpsertPayload = {
+  title: string
+  author: string
+  publisher: string
+  isbn: string
+  classification: string
+  category: string
+  pageCount: number
+  price: number
+}
+
 const CART_STORAGE_KEY = 'bookstore_cart'
 const BROWSE_STATE_KEY = 'bookstore_browse_state'
+
+const EMPTY_BOOK_FORM: BookFormState = {
+  title: '',
+  author: '',
+  publisher: '',
+  isbn: '',
+  classification: '',
+  category: '',
+  pageCount: '',
+  price: '',
+}
+
+function toBookFormState(book: Book): BookFormState {
+  return {
+    title: book.title,
+    author: book.author,
+    publisher: book.publisher,
+    isbn: book.isbn,
+    classification: book.classification,
+    category: book.category,
+    pageCount: String(book.pageCount),
+    price: book.price.toString(),
+  }
+}
+
+async function readErrorMessage(response: Response, fallback: string) {
+  try {
+    const payload = (await response.json()) as { message?: string }
+    if (typeof payload.message === 'string' && payload.message.trim().length > 0) {
+      return payload.message
+    }
+  } catch {
+    // Best effort. If payload is not JSON we still return fallback.
+  }
+
+  return fallback
+}
 
 function App() {
   const [books, setBooks] = useState<Book[]>([])
@@ -36,12 +97,19 @@ function App() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(5)
   const [sort, setSort] = useState<'asc' | 'desc'>('asc')
-  const [totalBooks, setTotalBooks] = useState(0)
   const [totalPages, setTotalPages] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [cartItems, setCartItems] = useState<CartItem[]>([])
-  const [view, setView] = useState<'shop' | 'cart'>('shop')
+  const [view, setView] = useState<View>('shop')
+
+  const [reloadToken, setReloadToken] = useState(0)
+  const [actionMessage, setActionMessage] = useState('')
+  const [activeBookId, setActiveBookId] = useState<number | null>(null)
+  const [bookForm, setBookForm] = useState<BookFormState>(EMPTY_BOOK_FORM)
+  const [formError, setFormError] = useState('')
+  const [formSaving, setFormSaving] = useState(false)
+  const [deletingBook, setDeletingBook] = useState(false)
 
   useEffect(() => {
     const savedCart = sessionStorage.getItem(CART_STORAGE_KEY)
@@ -98,7 +166,7 @@ function App() {
 
     fetchCategories()
     return () => controller.abort()
-  }, [])
+  }, [reloadToken])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -124,7 +192,6 @@ function App() {
 
         const data: BooksResponse = await response.json()
         setBooks(data.books)
-        setTotalBooks(data.totalBooks)
         setTotalPages(data.totalPages)
 
         if (data.totalPages > 0 && page > data.totalPages) {
@@ -141,7 +208,7 @@ function App() {
 
     fetchBooks()
     return () => controller.abort()
-  }, [page, pageSize, sort, selectedCategory])
+  }, [page, pageSize, sort, selectedCategory, reloadToken])
 
   const pageNumbers = useMemo(
     () => Array.from({ length: totalPages }, (_, i) => i + 1),
@@ -185,6 +252,347 @@ function App() {
       prev.map((item) =>
         item.book.bookID === bookID ? { ...item, quantity } : item,
       ),
+    )
+  }
+
+  const openAddBookPage = () => {
+    setActionMessage('')
+    setFormError('')
+    setActiveBookId(null)
+    setBookForm(EMPTY_BOOK_FORM)
+    setView('add')
+  }
+
+  const openEditBookPage = (book: Book) => {
+    setActionMessage('')
+    setFormError('')
+    setActiveBookId(book.bookID)
+    setBookForm(toBookFormState(book))
+    setView('edit')
+  }
+
+  const setFieldValue = (field: keyof BookFormState, value: string) => {
+    setBookForm((current) => ({ ...current, [field]: value }))
+  }
+
+  const validateBookForm = () => {
+    if (!bookForm.title.trim()) {
+      return 'Title is required.'
+    }
+
+    if (!bookForm.author.trim()) {
+      return 'Author is required.'
+    }
+
+    if (!bookForm.publisher.trim()) {
+      return 'Publisher is required.'
+    }
+
+    if (!bookForm.isbn.trim()) {
+      return 'ISBN is required.'
+    }
+
+    if (!bookForm.classification.trim()) {
+      return 'Classification is required.'
+    }
+
+    if (!bookForm.category.trim()) {
+      return 'Category is required.'
+    }
+
+    const pageCount = Number(bookForm.pageCount)
+    if (!Number.isInteger(pageCount) || pageCount < 1) {
+      return 'Page count must be at least 1.'
+    }
+
+    const price = Number(bookForm.price)
+    if (!Number.isFinite(price) || price < 0) {
+      return 'Price must be a valid number that is zero or greater.'
+    }
+
+    return ''
+  }
+
+  const buildBookPayload = (): BookUpsertPayload => ({
+    title: bookForm.title.trim(),
+    author: bookForm.author.trim(),
+    publisher: bookForm.publisher.trim(),
+    isbn: bookForm.isbn.trim(),
+    classification: bookForm.classification.trim(),
+    category: bookForm.category.trim(),
+    pageCount: Number(bookForm.pageCount),
+    price: Number(bookForm.price),
+  })
+
+  const refreshAfterDataChange = () => {
+    setPage(1)
+    setSelectedCategory('All')
+    setReloadToken((value) => value + 1)
+  }
+
+  const createBook = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    const validationError = validateBookForm()
+    if (validationError) {
+      setFormError(validationError)
+      return
+    }
+
+    try {
+      setFormSaving(true)
+      setFormError('')
+
+      const response = await fetch('/api/books', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildBookPayload()),
+      })
+
+      if (!response.ok) {
+        const message = await readErrorMessage(response, 'Unable to add book.')
+        throw new Error(message)
+      }
+
+      setActionMessage('Book added successfully.')
+      setView('shop')
+      setBookForm(EMPTY_BOOK_FORM)
+      refreshAfterDataChange()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Unable to add book.')
+    } finally {
+      setFormSaving(false)
+    }
+  }
+
+  const updateBook = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (activeBookId === null) {
+      setFormError('No book selected for editing.')
+      return
+    }
+
+    const validationError = validateBookForm()
+    if (validationError) {
+      setFormError(validationError)
+      return
+    }
+
+    try {
+      setFormSaving(true)
+      setFormError('')
+
+      const response = await fetch(`/api/books/${activeBookId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildBookPayload()),
+      })
+
+      if (!response.ok) {
+        const message = await readErrorMessage(response, 'Unable to update book.')
+        throw new Error(message)
+      }
+
+      setActionMessage('Book updated successfully.')
+      setView('shop')
+      refreshAfterDataChange()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Unable to update book.')
+    } finally {
+      setFormSaving(false)
+    }
+  }
+
+  const deleteBook = async () => {
+    if (activeBookId === null) {
+      setFormError('No book selected for deletion.')
+      return
+    }
+
+    const confirmed = window.confirm('Delete this book from the catalog?')
+    if (!confirmed) {
+      return
+    }
+
+    try {
+      setDeletingBook(true)
+      setFormError('')
+
+      const response = await fetch(`/api/books/${activeBookId}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        const message = await readErrorMessage(response, 'Unable to delete book.')
+        throw new Error(message)
+      }
+
+      setCartItems((prev) => prev.filter((item) => item.book.bookID !== activeBookId))
+      setActionMessage('Book deleted successfully.')
+      setView('shop')
+      refreshAfterDataChange()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Unable to delete book.')
+    } finally {
+      setDeletingBook(false)
+    }
+  }
+
+  const renderBookForm = (mode: 'add' | 'edit') => {
+    const isEditMode = mode === 'edit'
+
+    return (
+      <div className="container py-4">
+        <div className="d-flex justify-content-between align-items-center mb-3">
+          <h1 className="mb-0">{isEditMode ? 'Edit Book' : 'Add New Book'}</h1>
+          <button className="btn btn-outline-secondary" onClick={() => setView('shop')}>
+            Back to Catalog
+          </button>
+        </div>
+
+        <div className="card shadow-sm">
+          <div className="card-body">
+            {formError && <div className="alert alert-danger">{formError}</div>}
+
+            <form onSubmit={isEditMode ? updateBook : createBook}>
+              <div className="row g-3">
+                <div className="col-md-6">
+                  <label htmlFor="title" className="form-label">Title</label>
+                  <input
+                    id="title"
+                    className="form-control"
+                    value={bookForm.title}
+                    onChange={(e) => setFieldValue('title', e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="col-md-6">
+                  <label htmlFor="author" className="form-label">Author</label>
+                  <input
+                    id="author"
+                    className="form-control"
+                    value={bookForm.author}
+                    onChange={(e) => setFieldValue('author', e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="col-md-6">
+                  <label htmlFor="publisher" className="form-label">Publisher</label>
+                  <input
+                    id="publisher"
+                    className="form-control"
+                    value={bookForm.publisher}
+                    onChange={(e) => setFieldValue('publisher', e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="col-md-6">
+                  <label htmlFor="isbn" className="form-label">ISBN</label>
+                  <input
+                    id="isbn"
+                    className="form-control"
+                    value={bookForm.isbn}
+                    onChange={(e) => setFieldValue('isbn', e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="col-md-6">
+                  <label htmlFor="classification" className="form-label">Classification</label>
+                  <input
+                    id="classification"
+                    className="form-control"
+                    value={bookForm.classification}
+                    onChange={(e) => setFieldValue('classification', e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="col-md-6">
+                  <label htmlFor="category" className="form-label">Category</label>
+                  <input
+                    id="category"
+                    className="form-control"
+                    value={bookForm.category}
+                    onChange={(e) => setFieldValue('category', e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="col-md-6">
+                  <label htmlFor="pageCount" className="form-label">Page Count</label>
+                  <input
+                    id="pageCount"
+                    type="number"
+                    min={1}
+                    className="form-control"
+                    value={bookForm.pageCount}
+                    onChange={(e) => setFieldValue('pageCount', e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="col-md-6">
+                  <label htmlFor="price" className="form-label">Price</label>
+                  <input
+                    id="price"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    className="form-control"
+                    value={bookForm.price}
+                    onChange={(e) => setFieldValue('price', e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="d-flex justify-content-between mt-4">
+                <div>
+                  {isEditMode && (
+                    <button
+                      type="button"
+                      className="btn btn-outline-danger"
+                      onClick={deleteBook}
+                      disabled={deletingBook || formSaving}
+                    >
+                      {deletingBook ? 'Deleting...' : 'Delete Book'}
+                    </button>
+                  )}
+                </div>
+
+                <div className="d-flex gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-outline-secondary"
+                    onClick={() => setView('shop')}
+                    disabled={formSaving || deletingBook}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={formSaving || deletingBook}
+                  >
+                    {formSaving
+                      ? isEditMode
+                        ? 'Saving...'
+                        : 'Adding...'
+                      : isEditMode
+                        ? 'Save Changes'
+                        : 'Add Book'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
     )
   }
 
@@ -246,6 +654,14 @@ function App() {
     )
   }
 
+  if (view === 'add') {
+    return renderBookForm('add')
+  }
+
+  if (view === 'edit') {
+    return renderBookForm('edit')
+  }
+
   return (
     <div className="container py-4">
       <div className="row g-4">
@@ -303,8 +719,8 @@ function App() {
                   setPage(1)
                 }}
               >
-                <option value="asc">A → Z</option>
-                <option value="desc">Z → A</option>
+                <option value="asc">A -&gt; Z</option>
+                <option value="desc">Z -&gt; A</option>
               </select>
             </div>
           </div>
@@ -336,9 +752,12 @@ function App() {
         <main className="col-lg-9">
           <div className="d-flex justify-content-between align-items-center mb-2">
             <h1 className="mb-0">Online Bookstore Catalog</h1>
-            <span className="badge text-bg-primary rounded-pill">{totalBooks} books</span>
+            <button className="btn btn-primary" onClick={openAddBookPage}>
+              Add New Book
+            </button>
           </div>
 
+          {actionMessage && <div className="alert alert-success">{actionMessage}</div>}
           {loading && <div className="alert alert-info">Loading books...</div>}
           {error && <div className="alert alert-danger">{error}</div>}
 
@@ -354,6 +773,7 @@ function App() {
                       <th>Pages</th>
                       <th>Price</th>
                       <th>Cart</th>
+                      <th>Edit</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -377,6 +797,11 @@ function App() {
                         <td>
                           <button className="btn btn-sm btn-outline-success" onClick={() => addToCart(book)}>
                             Add to Cart
+                          </button>
+                        </td>
+                        <td>
+                          <button className="btn btn-sm btn-outline-primary" onClick={() => openEditBookPage(book)}>
+                            Edit
                           </button>
                         </td>
                       </tr>
