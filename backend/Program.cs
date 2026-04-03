@@ -1,11 +1,14 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Mission11_Meek;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddOpenApi();
+
+var sqliteConnectionString = ResolveSqliteConnectionString(builder.Configuration, builder.Environment);
 builder.Services.AddDbContext<BookstoreContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("BookstoreConnection")));
+    options.UseSqlite(sqliteConnectionString));
 
 var allowedOrigins = builder.Configuration
     .GetSection("Cors:AllowedOrigins")
@@ -26,6 +29,12 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+}
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<BookstoreContext>();
+    db.Database.EnsureCreated();
 }
 
 app.UseHttpsRedirection();
@@ -172,6 +181,47 @@ app.MapDelete("/api/books/{id:int}", async (BookstoreContext db, int id) =>
 });
 
 app.Run();
+
+static string ResolveSqliteConnectionString(IConfiguration configuration, IWebHostEnvironment environment)
+{
+    var configuredConnection = configuration.GetConnectionString("BookstoreConnection");
+    var sqlite = new SqliteConnectionStringBuilder(configuredConnection);
+
+    if (string.IsNullOrWhiteSpace(sqlite.DataSource))
+    {
+        sqlite.DataSource = "Bookstore.sqlite";
+    }
+
+    if (Path.IsPathRooted(sqlite.DataSource))
+    {
+        return sqlite.ToString();
+    }
+
+    var isAzureAppService =
+        !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME")) &&
+        !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("HOME"));
+
+    var contentRootDbPath = Path.Combine(environment.ContentRootPath, sqlite.DataSource);
+    var baseDirectory = environment.ContentRootPath;
+
+    if (isAzureAppService)
+    {
+        var home = Environment.GetEnvironmentVariable("HOME")!;
+        var dataDirectory = Path.Combine(home, "data");
+        Directory.CreateDirectory(dataDirectory);
+
+        var writableDbPath = Path.Combine(dataDirectory, sqlite.DataSource);
+        if (!File.Exists(writableDbPath) && File.Exists(contentRootDbPath))
+        {
+            File.Copy(contentRootDbPath, writableDbPath);
+        }
+
+        baseDirectory = dataDirectory;
+    }
+
+    sqlite.DataSource = Path.Combine(baseDirectory, sqlite.DataSource);
+    return sqlite.ToString();
+}
 
 static string? ValidateBook(BookUpsertRequest request)
 {
