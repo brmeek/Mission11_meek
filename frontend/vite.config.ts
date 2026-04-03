@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        target: 'https://bookstore-backend-hrceaafxeyd9akfy.westus2-01.azurewebsites.net',
         changeOrigin: true,
       },
     },
