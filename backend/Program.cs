@@ -10,15 +10,11 @@ var sqliteConnectionString = ResolveSqliteConnectionString(builder.Configuration
 builder.Services.AddDbContext<BookstoreContext>(options =>
     options.UseSqlite(sqliteConnectionString));
 
-var allowedOrigins = builder.Configuration
-    .GetSection("Cors:AllowedOrigins")
-    .Get<string[]>() ?? ["http://localhost:5173"];
-
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins(allowedOrigins)
+        policy.AllowAnyOrigin()
             .AllowAnyHeader()
             .AllowAnyMethod();
     });
