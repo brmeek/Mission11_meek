@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
+import { buildApiUrl } from './api'
 
 type Book = {
   bookID: number
@@ -150,7 +151,7 @@ function App() {
 
     const fetchCategories = async () => {
       try {
-        const response = await fetch('/api/categories', { signal: controller.signal })
+        const response = await fetch(buildApiUrl('/api/categories'), { signal: controller.signal })
         if (!response.ok) {
           throw new Error('Unable to load categories')
         }
@@ -182,7 +183,7 @@ function App() {
             : `&category=${encodeURIComponent(selectedCategory)}`
 
         const response = await fetch(
-          `/api/books?page=${page}&pageSize=${pageSize}&sort=${sort}${categoryQuery}`,
+          buildApiUrl(`/api/books?page=${page}&pageSize=${pageSize}&sort=${sort}${categoryQuery}`),
           { signal: controller.signal },
         )
 
@@ -343,7 +344,7 @@ function App() {
       setFormSaving(true)
       setFormError('')
 
-      const response = await fetch('/api/books', {
+      const response = await fetch(buildApiUrl('/api/books'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildBookPayload()),
@@ -383,7 +384,7 @@ function App() {
       setFormSaving(true)
       setFormError('')
 
-      const response = await fetch(`/api/books/${activeBookId}`, {
+      const response = await fetch(buildApiUrl(`/api/books/${activeBookId}`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildBookPayload()),
@@ -419,7 +420,7 @@ function App() {
       setDeletingBook(true)
       setFormError('')
 
-      const response = await fetch(`/api/books/${activeBookId}`, {
+      const response = await fetch(buildApiUrl(`/api/books/${activeBookId}`), {
         method: 'DELETE',
       })
 
